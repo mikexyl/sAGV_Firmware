@@ -1,0 +1,68 @@
+From 3d46581323dd90a2dd378b8984b26f1c74142b12 Mon Sep 17 00:00:00 2001
+From: "Leon.Sun" <sonnryou@gmail.com>
+Date: Wed, 28 Jun 2017 21:20:32 +0800
+Subject: [PATCH] =?UTF-8?q?fixbug:=20rs9113=20=E9=A9=B1=E5=8A=A8=E5=BC=82?=
+ =?UTF-8?q?=E6=AD=A5socket=E6=8E=A5=E6=94=B6=E4=B8=8D=E5=88=B0=E6=95=B0?=
+ =?UTF-8?q?=E6=8D=AE=E9=97=AE=E9=A2=98?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+由于操作顺序问题，导致丢中断引起不再接收数据
+---
+ usr/rs9113_wifi/sapis/driver/rsi_driver_event_handlers.c | 12 +++---------
+ 1 file changed, 3 insertions(+), 9 deletions(-)
+
+diff --git a/usr/rs9113_wifi/sapis/driver/rsi_driver_event_handlers.c b/usr/rs9113_wifi/sapis/driver/rsi_driver_event_handlers.c
+index 58fe1c4..70f0d87 100644
+--- a/usr/rs9113_wifi/sapis/driver/rsi_driver_event_handlers.c
++++ b/usr/rs9113_wifi/sapis/driver/rsi_driver_event_handlers.c
+@@ -308,6 +308,9 @@ void rsi_rx_event_handler(void)
+ #endif
+     }
+ 
++    rsi_clear_event(RSI_RX_EVENT);
++    rsi_hal_intr_unmask();
++
+   //! Read packet from module
+    status = rsi_frame_read(buf_ptr);
+ 
+@@ -324,9 +327,7 @@ if(rsi_common_cb->power_save.power_save_enable)
+ #ifdef RSI_UART_INTERFACE
+   if(!rsi_check_queue_status(&rsi_linux_app_cb.rcv_queue))
+ #endif
+-    rsi_clear_event(RSI_RX_EVENT);
+     rsi_pkt_free(&rsi_driver_cb->rx_pool,rx_pkt);
+-    rsi_hal_intr_unmask();
+     return;
+   }
+ 
+@@ -343,11 +344,8 @@ if(rsi_common_cb->power_save.power_save_enable)
+ #if RSI_UART_INTERFACE
+   if(!rsi_check_queue_status(&rsi_linux_app_cb.rcv_queue))
+ #endif
+-    rsi_clear_event(RSI_RX_EVENT);
+     //! Unmask RX event
+     rsi_unmask_event(RSI_RX_EVENT);
+-
+-    rsi_hal_intr_unmask();
+     return;
+   }
+ #endif
+@@ -421,13 +419,9 @@ if(rsi_common_cb->power_save.power_save_enable)
+ #ifdef RSI_UART_INTERFACE
+   if(!rsi_check_queue_status(&rsi_linux_app_cb.rcv_queue))
+ #endif
+-  //! Clear RX event
+-  rsi_clear_event(RSI_RX_EVENT);
+ 
+   //! Unmask RX event
+   rsi_unmask_event(RSI_RX_EVENT);
+-
+-  rsi_hal_intr_unmask();
+   return;
+ }
+ 
+-- 
+1.9.2.msysgit.0
+

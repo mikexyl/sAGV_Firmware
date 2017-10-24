@@ -1,0 +1,20 @@
+---- wTarget 匹配 (23 in 7 文件) ----
+DataBank.c (application\motion_ctrl):float32 wTarget = 0.0f;
+DataBank.h (include\motion_ctrl):extern float32 wTarget;   
+motion_ctrl.c (application):                  angleVDown = 	0.5f * wTarget * wTarget /wAccDn + angleVDnRatio * wTarget;
+motion_ctrl.c (application):                    angleVDown = 	0.5f * wTarget * wTarget /wAccDn + angleVDnRatio * wTarget;
+rAGVControl.c (application\motion_ctrl):					if(wTarget > 5.0f)
+rAGVControl.c (application\motion_ctrl):						wTarget = 5.0f ;
+rAGVControl.c (application\motion_ctrl):				if ( wCurrent <  wTarget )
+rAGVControl.c (application\motion_ctrl):					FApproach(&wCurrent, wTarget, wCurInc); // 直接采用路段最高允许速度
+rAGVControl.c (application\motion_ctrl):					FApproach(&wCurrent, wTarget, wCurDec); // 直接采用路段最高允许速度
+rAGVControl.c (application\motion_ctrl):					if(wTarget > 5.0f)
+rAGVControl.c (application\motion_ctrl):						wTarget = 5.0f;
+rAGVControl.c (application\motion_ctrl):			   		wTarget = 0.0f;
+rAGVControl.c (application\motion_ctrl):				if ( wCurrent <  wTarget )
+rAGVControl.c (application\motion_ctrl):					FApproach(&wCurrent, wTarget, wCurDec); // 直硬捎寐范巫罡咴市硭俣?
+rAGVControl.c (application\motion_ctrl):					FApproach(&wCurrent, wTarget, wCurInc); // 直接采用路段最高允许速度
+TshapeVplan.c (application\motion_ctrl)://float tShapeWTarget = 0.0f;
+TshapeVPlan.h (include\motion_ctrl)://extern float tShapeWTarget;
+VPlan.c (application\motion_ctrl):		wTarget = wAngle;
+VPlan.c (application\motion_ctrl):		wTarget = sqrt((( 2 * Angle * wAccUp * wAccDn) + (wAccDn * wCurrent * wCurrent ))/ (wAccUp + wAccDn) );

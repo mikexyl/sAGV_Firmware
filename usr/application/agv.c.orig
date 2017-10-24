@@ -1,0 +1,640 @@
+#include <string.h>
+#include <ucos_ii.h>
+#include <stdio.h>
+
+#include "common/PosixError.h"
+#include "common/tools.h"
+
+#include "bsp_led.h"
+#include "agv.h"
+#include "agvcp.h"
+#include "motors.h"
+#include "DataBank.h"
+#include "motion_ctrl.h"
+#include "Navigation.h"
+#include "bms.h"
+
+static agv_status_t agvstat;
+
+//static void motionctrl_event_callback(motion_event_t evt, uint32_t len, const uint8_t *params);
+static int agvcp_event_process(agvcp_event_t action, uint32_t paramlen, const uint8_t *params);
+static int get_status(agv_status_t *stat);
+static void agv_task(void *param);
+static int process_motionctrl_event(motion_event_t evt, uint32_t param_l, const uint8_t *param);
+static int  read_param(uint32_t id, float *val);
+static int  write_param(uint32_t id, float val);
+static int issue_command(agv_action_t cmd, uint32_t l, const uint8_t *param);
+static int lock_point(uint32_t point);
+static int check_and_release_point(uint32_t point);
+
+agvcp_cb_t agv_callback =
+{
+    &agvcp_event_process,
+    &get_status,
+    &read_param,
+    &write_param,
+};
+
+#define MAX_MOTION_EVENT_NUM    8
+#define MAX_MOTION_EVENT_LEN    32
+static void     *evtq_mem[MAX_MOTION_EVENT_NUM];
+static OS_EVENT *mtevtQ;
+static uint8_t  evtmem_pool[MAX_MOTION_EVENT_NUM][MAX_MOTION_EVENT_LEN];
+static OS_MEM   *evtmem;
+
+#define MAX_MOTION_CMD_NUM    8
+#define MAX_MOTION_CMD_LEN    128
+
+static void     *cmdq_mem[MAX_MOTION_CMD_NUM];
+static OS_EVENT *mtcmdQ;
+static uint8_t  cmdmem_pool[MAX_MOTION_CMD_NUM][MAX_MOTION_CMD_LEN];
+static OS_MEM   *cmdmem;
+
+#define MAX_WAYPOINT_NUM    64
+static void *waypointQ_mem[MAX_WAYPOINT_NUM];
+static OS_EVENT *wpQ;
+
+int agv_init(uint32_t agvid)
+{
+    uint8_t err;
+
+    mtevtQ = OSQCreate(evtq_mem, MAX_MOTION_EVENT_NUM);
+    if(mtevtQ == NULL)
+    {
+        APP_TRACE("agv create mtevtQ failed.\r\n");
+        return  -PERR_ENOMEM;
+    }
+
+    evtmem = OSMemCreate(evtmem_pool, MAX_MOTION_EVENT_NUM,
+                MAX_MOTION_EVENT_LEN, &err);
+    if(evtmem == NULL)
+    {
+        APP_TRACE("agv create evtmem failed. err = %d\r\n", err);
+        return  -PERR_ENOMEM;
+    }
+
+    mtcmdQ = OSQCreate(cmdq_mem, MAX_MOTION_CMD_NUM);
+    if(mtcmdQ == NULL)
+    {
+        APP_TRACE("agv create mtcmdQ failed.\r\n");
+        return  -PERR_ENOMEM;
+    }
+
+    cmdmem = OSMemCreate(cmdmem_pool, MAX_MOTION_CMD_NUM,
+                MAX_MOTION_EVENT_LEN, &err);
+    if(cmdmem == NULL)
+    {
+        APP_TRACE("agv create cmdmem failed. err=%d\r\n", err);
+        return  -PERR_ENOMEM;
+    }
+
+    wpQ = OSQCreate(waypointQ_mem, MAX_WAYPOINT_NUM);
+    if(wpQ == NULL)
+    {
+        APP_TRACE("agv create wpQ failed.\r\n");
+        return  -PERR_ENOMEM;
+    }
+
+    agvstat.battery = 100;
+    agvstat.work_state = AGV_WKSTATE_READY;
+    agvstat.error = 0;
+
+    agvstat.mtstate.position.point = 0;
+    agvstat.mtstate.position.x_deviation = 0;
+    agvstat.mtstate.position.y_deviation = 0;
+
+    agvstat.mtstate.direction.direction = 0;
+    agvstat.mtstate.direction.deviation = 0;
+
+    agvstat.mtstate.speed = 0;
+    agvstat.mtstate.state = MOTIONSTATE_ONSTOPING;
+    agvstat.mtstate.action = ACTION_STOP;
+
+    agvcp_init(agvid, &agv_callback);
+
+    return 0;
+}
+
+#define AGV_TASK_STACKSIZE    512
+static OS_STK agv_task_stack[AGV_TASK_STACKSIZE];
+
+int agv_run(void)
+{
+    uint8_t err;
+
+    motionctrl_run(&motionctrl_event_callback);
+
+    get_motion_state(&agvstat.mtstate);
+    agvstat.battery = 0;
+    agvstat.work_state = AGV_WKSTATE_READY;
+    agvstat.error = 0;
+
+    /*
+     * 向控制台注册并开始通讯
+     */
+    agvcp_connect_controller(CONTROLLER_IP, CONTROLLER_PORT);
+
+    err = OSTaskCreateExt(agv_task,	/* 启动任务函数指针 */
+                    (void *)0,		/* 传递给任务的参数 */
+                    (OS_STK *)&agv_task_stack[AGV_TASK_STACKSIZE - 1], /* 指向任务栈栈顶的指针 */
+                    AGV_TASK_PRIOR        ,	/* 任务的优先级，必须唯一，数字越低优先级越高 */
+                    AGV_TASK_PRIOR        ,	/* 任务ID，一般和任务优先级相同 */
+                    (OS_STK *)&agv_task_stack[0],/* 指向任务栈栈底的指针。OS_STK_GROWTH 决定堆栈增长方向 */
+                    AGV_TASK_STACKSIZE, /* 任务栈大小 */
+                    (void *)0,	/* 一块用户内存区的指针，用于任务控制块TCB的扩展功能
+                       （如任务切换时保存CPU浮点寄存器的数据）。一般不用，填0即可 */
+                    OS_TASK_OPT_STK_CHK | OS_TASK_OPT_STK_CLR); /* 任务选项字 */
+
+    if(err != OS_ERR_NONE)
+    {
+        APP_TRACE("agv create task failed\r\n");
+        return -PERR_ENOMEM;
+    }
+    else
+    {
+        OSTaskNameSet(AGV_TASK_PRIOR, "agv", &err);
+        return 0;
+    }
+}
+
+
+void motionctrl_event_callback(motion_event_t evt, uint32_t len, const uint8_t *params)
+{
+    uint8_t err;
+    uint8_t *buf;
+    static uint32_t seq=1;
+
+#if 1
+    buf = OSMemGet(evtmem, &err);
+    if(buf == NULL)
+    {
+        APP_TRACE("ERROR: event allocate memory failed\r\n");
+        return ;
+    }
+
+    if(len > MAX_MOTION_EVENT_LEN-2)
+        APP_TRACE("ERROR: event params too long\r\n");
+
+    //APP_TRACE("motctrl.evt-%d\r\n", evt);
+
+    //For debuging
+#if 0
+    buf[0] = evt;
+    buf[1] = (len>(MAX_MOTION_EVENT_LEN-2))? (MAX_MOTION_EVENT_LEN-2):len;
+    memcpy(&buf[2], params, buf[1]);
+#else
+    buf[0] = seq++;
+    buf[1] = evt;
+    buf[2] = (len>(MAX_MOTION_EVENT_LEN-2))? (MAX_MOTION_EVENT_LEN-2):len;
+    memcpy(&buf[3], params, buf[2]);
+#endif
+
+    err = OSQPost(mtevtQ, buf);
+
+    if(err != OS_ERR_NONE)
+    {
+        APP_TRACE("motion-ctrl post evt failed. err=%d\r\n",err);
+        OSMemPut(evtmem, buf);
+        return ;
+    }
+#else
+    //APP_TRACE("Motion-ctrl event: %d\r\n", evt);
+    process_motionctrl_event((motion_event_t)evt, len, params);
+    agvcp_notify_event(evt, len, params);
+#endif
+}
+
+#if 0
+static void clean_que(OS_EVENT *Q, OS_MEM *partition)
+{
+    uint8_t *data;
+    uint8_t err;
+
+    data = OSQAccept(Q, &err);
+    while(data)
+    {
+        OSMemPut(partition, data);
+        data = OSQAccept(Q, &err);
+    }
+}
+#endif
+
+static int process_action_cmd(uint32_t action, uint32_t paramlen, const uint8_t *params)
+{
+    uint8_t err;
+    uint8_t *data;
+    int     ret;
+    OS_Q_DATA q_data;
+
+  /*
+   *  TODO:
+   *      与停止命令对应的，需要一个恢复的命令
+   * */
+  /*
+   * 对于STOP命令，清空任务队列，并立即下发
+   * 若下发被拒绝则添加到任务队列
+   */
+    if(action == AGVCPEVT_ACTION_STOP)
+    {
+        //clean_que(mtcmdQ, cmdmem);
+        ret = issue_command((agv_action_t)action, paramlen, params);
+    }
+    else
+    {
+        /*
+         * 对于其它命令：
+         * 若任务队列不为空，则添加到任务队列。
+         * 若任务队列为空，则立即下发。
+         * 若立即下发被拒绝同样添加到任务队列
+        */
+        OSQQuery(mtcmdQ, &q_data);
+        if(q_data.OSNMsgs == 0)
+            ret = issue_command((agv_action_t)action, paramlen, params);
+        else
+            ret = -PERR_EBUSY;
+    }
+
+    if(ret == -PERR_EBUSY)
+    {
+        data = OSMemGet(cmdmem, &err);
+        if(data == NULL)
+          return -PERR_ENOMEM;
+
+        data[0] = action;
+        data[1] = (paramlen > (MAX_MOTION_CMD_LEN-2))? (MAX_MOTION_CMD_LEN-2):paramlen;
+        memcpy(&data[2], params, data[1]);
+
+        //STOP 命令直接插入队列最前面
+        if(action == AGVCPEVT_ACTION_STOP)
+          OSQPostFront(mtcmdQ, data);
+        else
+          OSQPost(mtcmdQ, data);
+    }
+    else if(ret == -PERR_EINVAL)
+    {
+        uint8_t    errcode;
+
+        errcode = WAY_POINT_ERROR;
+        motionctrl_event_callback(MOTIONCTRL_EVENT_ERROR, 1, &errcode);
+    }
+    else
+    {
+        switch(action)
+        {
+            case AGVCPEVT_ACTION_STOP:
+              agvstat.work_state = AGV_WKSTATE_STOP;
+              break;
+
+            case AGVCPEVT_ACTION_STARTCHARGE:
+              agvstat.work_state = AGV_WKSTATE_CHARGING;
+              break;
+
+            case AGVCPEVT_ACTION_ENDCHARGE:
+              agvstat.work_state = AGV_WKSTATE_READY;
+              break;
+
+            case AGVCPEVT_ACTION_GOSTRAIGHT:
+            case AGVCPEVT_ACTION_TRUNLEFT:
+            case AGVCPEVT_ACTION_TRUNRIGHT:
+              agvstat.work_state = AGV_WKSTATE_MOVING;
+              break;
+
+            default:
+              break;
+        }
+    }
+
+    return 0;
+}
+
+static int  read_param(uint32_t id, float *val)
+{
+    APP_TRACE("AGV: read param[%d].\r\n");
+    return 0;
+}
+
+static int  write_param(uint32_t id, float val)
+{
+    APP_TRACE("AGV: write param[%d] = %f\r\n", id, val);
+    return 0;
+}
+
+static int agvcp_event_process(agvcp_event_t action, uint32_t paramlen, const uint8_t *params)
+{
+    if(action == AGVCPEVT_CONNECTION_RECOVERY)
+    {
+        return PERR_EOK;
+    }
+    else if(action == AGVCPEVT_CONNECTION_LOST)
+    {
+        return PERR_EOK;
+    }
+    else
+        process_action_cmd(action, paramlen, params);
+
+    return 0;
+}
+
+static int get_status(agv_status_t *stat)
+{
+    memcpy(stat, &agvstat, sizeof(agv_status_t));
+    return PERR_EOK;
+}
+
+/*
+ *  return 0, or action
+ */
+static int issue_next_cmd(uint8_t evt)
+{
+    uint8_t err;
+    uint8_t *cmd_data;
+    uint8_t action;
+    int     ret;
+
+    switch(evt)
+    {
+        case MOTIONCTRL_EVENT_ACTION_OVER:
+            cmd_data = OSQAccept(mtcmdQ, &err);
+            if(cmd_data == 0)
+              return 0;
+
+            ret = issue_command((agv_action_t)cmd_data[0], cmd_data[1], &cmd_data[2]);
+            if(ret == -PERR_EINVAL)
+            {
+                err = WAY_POINT_ERROR;
+                motionctrl_event_callback(MOTIONCTRL_EVENT_ERROR, 1, &err);
+            }
+            else
+                ret=cmd_data[0];
+
+            OSMemPut(cmdmem, cmd_data);
+            break;
+
+        case MOTIONCTRL_EVENT_POINT_ARRIVAL:
+            cmd_data = OSQAccept(mtcmdQ, &err);
+            if(cmd_data == 0)
+              return 0;
+
+            action = cmd_data[0];
+            if( (action == AGVCPEVT_ACTION_STOP) || (action == AGVCPEVT_ACTION_GOSTRAIGHT) )
+            {
+                ret = issue_command((agv_action_t)action, cmd_data[1], &cmd_data[2]);
+                if(ret == -PERR_EINVAL)
+                {
+                  err = WAY_POINT_ERROR;
+                  motionctrl_event_callback(MOTIONCTRL_EVENT_ERROR, 1, &err);
+                }
+                else
+                  ret=cmd_data[0];
+
+                /*
+                 * the cmd is issued to the motion-ctrl,
+                 * then release the memory
+                 * */
+                OSMemPut(cmdmem, cmd_data);
+            }
+            else
+            {
+              /*
+               * the poped cmd is didnt processd,
+               * then push it back into the queue
+               * */
+              OSQPostFront(mtcmdQ, cmd_data);
+
+              ret = 0;
+            }
+            break;
+
+        default:
+            ret = 0;
+            break;
+    }
+
+    return ret;
+}
+
+static void agv_task(void *param)
+{
+    uint8_t err;
+    uint8_t *data;
+    uint8_t evt;
+    static uint32_t seq = 0;
+
+    APP_TRACE("agv_task: task run.\r\n");
+
+    while(1)
+    {
+      data = OSQPend(mtevtQ, 20, &err);
+      if(data != NULL)
+      {
+#if 0
+          evt = data[0];
+
+          //APP_TRACE("agv process motion-ctrl event: %d\r\n", evt);
+          process_motionctrl_event((motion_event_t)evt, data[1], &data[2]);
+          agvcp_notify_event(evt, data[1], &data[2]);
+#else
+          if(data[0] != seq+1)
+          {
+              APP_TRACE("Mcevt wrong seq. %d != %d\r\n", data[0], seq+1);
+          }
+
+          seq = data[0];
+          evt = data[1];
+
+          APP_TRACE("agv process motion-ctrl event: %d\r\n", evt);
+
+          process_motionctrl_event((motion_event_t)evt, data[2], &data[3]);
+          agvcp_notify_event(evt, data[2], &data[3]);
+
+          if(evt == MOTIONCTRL_EVENT_POINT_ARRIVAL)
+          {
+            /*
+             * 二维码点校验
+             * */
+              if(check_and_release_point(twoD_TagCode) != PERR_EOK)
+              {
+                  APP_TRACE("point error at : %d\r\n", twoD_TagCode);
+
+                  //锁点校验错误
+                  err = WAY_POINT_ERROR;
+                  motionctrl_event_callback(MOTIONCTRL_EVENT_ERROR, 1, &err);
+              }
+          }
+#endif
+
+          if( (evt == MOTIONCTRL_EVENT_ACTION_OVER) || (evt == MOTIONCTRL_EVENT_POINT_ARRIVAL) )
+          {
+              APP_TRACE("On mcevt %d, naviinfo: x=%f, y=%f, angle=%f.\r\n", 
+                        evt, twoD_XP, twoD_YP, twoD_Angle);
+          }
+
+          OSMemPut(evtmem, data);
+      }
+#if 0
+      else
+      {
+          if(Motionstyle == ACTION_MODE_GOAHEAD)
+          {
+            APP_TRACE("sRemain=%f. GS_DEV=%f. deltaL=%d, deltaR=%d\r\n",
+                      sRemain, GS_DEV, deltaVL, deltaVR);
+          }
+      }
+#endif
+    }
+}
+
+static int process_motionctrl_event(motion_event_t evt, uint32_t param_l, const uint8_t *param)
+{
+    int ret;
+
+    switch(evt)
+    {
+        case MOTIONCTRL_EVENT_ACTION_OVER:
+        case MOTIONCTRL_EVENT_POINT_ARRIVAL:
+          get_motion_state(&agvstat.mtstate);
+          ret = issue_next_cmd(evt);
+
+          /*Update work state*/
+          if( ((ret == 0) && (evt == MOTIONCTRL_EVENT_ACTION_OVER)) ||
+              (ret == AGVCPEVT_ACTION_ENDCHARGE) )
+            agvstat.work_state = AGV_WKSTATE_READY;
+          else if(ret == AGVCPEVT_ACTION_STOP)
+            agvstat.work_state = AGV_WKSTATE_STOP;
+          else if(ret == AGVCPEVT_ACTION_STARTCHARGE)
+            agvstat.work_state = AGV_WKSTATE_CHARGING;
+          else
+            agvstat.work_state = AGV_WKSTATE_MOVING;
+          break;
+
+        case MOTIONCTRL_EVENT_ERROR:
+          get_motion_state(&agvstat.mtstate);
+          agvstat.work_state = AGV_WKSTATE_ERROR;
+          agvstat.error = param[0];
+
+          break;
+
+        case MOTIONCTRL_EVENT_ERROR_RECOVERY:
+          get_motion_state(&agvstat.mtstate);
+          agvstat.work_state = AGV_WKSTATE_READY;
+          break;
+
+        case MOTIONCTRL_EVENT_ACTION_START:
+        default:
+          break;
+    }
+
+    return 0;
+}
+
+static int issue_command(agv_action_t cmd, uint32_t l, const uint8_t *params)
+{
+    int ret;
+    static  uint32_t last_ponit = ~0;    //the last point in the queue
+    uint32_t point;
+    int i, npoint;
+
+    if( (cmd == ACTION_CHARGE) ||
+      (cmd == ACTION_STOP_CHARGE) )
+    {
+        bms_charge((cmd==ACTION_CHARGE)? 1:0);
+        return PERR_EOK;
+    }
+
+    //Check the start point
+    if( ((cmd == ACTION_GOSTRAIGHT) || (cmd == ACTION_GOBACKWARD))
+        && (last_ponit != 0) )
+    {
+        NTOHL_COPY(&params[8], &point);
+        if(point == 0) point = ~0;
+
+        if( (point != last_ponit) && (point != ~0) && (last_ponit != ~0) )
+        {
+<<<<<<< HEAD
+            APP_TRACE("Wrong start point to go.\r\n");
+            return -PERR_EINVAL;
+=======
+            APP_TRACE("Action with wrong start point. start_point=%d last_point=%d\r\n",
+                      point, last_ponit);
+            return -EINVAL;
+>>>>>>> dev
+        }
+    }
+
+    ret = motionctrl_cmd(cmd, l, params);
+    if(ret != PERR_EOK)
+        return ret;
+
+    /*
+     * 对于直行和后退，需要将锁点压入队列
+     *  后面用来做路径校验
+     * */
+    if((cmd == ACTION_GOSTRAIGHT) || (cmd == ACTION_GOBACKWARD))
+    {
+        NTOHL_COPY(&params[0], &npoint);
+        npoint /= (int)twoD_Distance;
+
+        for(i=0; i<npoint; i++)
+        {
+            NTOHL_COPY(&params[12+i*4], &point);
+
+            if(point == 0) point = ~0;
+            lock_point(point);
+        }
+
+        last_ponit = point ;
+    }
+
+    return 0;
+}
+
+/*
+ *  Notice:
+ *  queque里不存指针，而直接存tag.
+ *  这样做有一个隐含的前置条件是：路径点的tag不能为0
+ */
+static int lock_point(uint32_t point)
+{
+    uint8_t err;
+
+    err = OSQPost(wpQ, (void*)point);
+    if(err != OS_ERR_NONE)
+<<<<<<< HEAD
+        return -PERR_ENOMEM;
+=======
+    {
+        APP_TRACE("lock point failed\r\n");
+        return -ENOMEM;
+    }
+>>>>>>> dev
+    else
+        return PERR_EOK;
+}
+
+static int check_and_release_point(uint32_t point)
+{
+    uint8_t err;
+    uint32_t expect_point;
+
+    expect_point = (uint32_t)OSQAccept(wpQ, &err);
+    if(expect_point == 0)
+<<<<<<< HEAD
+        return -PERR_ENOMEM;
+=======
+    {
+        APP_TRACE("Get lock_point failed: %d\r\n", point);
+        return -ENOMEM;
+    }
+>>>>>>> dev
+
+    if( (expect_point == point) ||
+        (expect_point == ~0) )
+        return PERR_EOK;
+    else
+    {
+        APP_TRACE("check lock_point error!\r\n");
+
+        OSQPostFront(wpQ, (void*)expect_point);
+        return -1;
+    }
+}

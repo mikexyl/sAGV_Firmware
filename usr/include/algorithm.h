@@ -1,0 +1,1 @@
+int canSendTest(void);

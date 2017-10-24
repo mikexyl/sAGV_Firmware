@@ -1,0 +1,297 @@
+diff a/usr/bsp/src/bsp_pwm.c b/usr/bsp/src/bsp_pwm.c	(rejected hunks)
+@@ -62,295 +62,6 @@
+ 
+ /*
+ *********************************************************************************************************
+-*	函 数 名: bsp_GetRCCofGPIO
+-*	功能说明: 根据GPIO 得到RCC寄存器
+-*	形    参：无
+-*	返 回 值: GPIO外设时钟名
+-*********************************************************************************************************
+-*/
+-uint32_t bsp_GetRCCofGPIO(GPIO_TypeDef* GPIOx)
+-{
+-	uint32_t rcc = 0;
+-
+-	if (GPIOx == GPIOA)
+-	{
+-		rcc = RCC_AHB1Periph_GPIOA;
+-	}
+-	else if (GPIOx == GPIOB)
+-	{
+-		rcc = RCC_AHB1Periph_GPIOB;
+-	}
+-	else if (GPIOx == GPIOC)
+-	{
+-		rcc = RCC_AHB1Periph_GPIOC;
+-	}
+-	else if (GPIOx == GPIOD)
+-	{
+-		rcc = RCC_AHB1Periph_GPIOD;
+-	}
+-	else if (GPIOx == GPIOE)
+-	{
+-		rcc = RCC_AHB1Periph_GPIOE;
+-	}
+-	else if (GPIOx == GPIOF)
+-	{
+-		rcc = RCC_AHB1Periph_GPIOF;
+-	}
+-	else if (GPIOx == GPIOG)
+-	{
+-		rcc = RCC_AHB1Periph_GPIOG;
+-	}
+-	else if (GPIOx == GPIOH)
+-	{
+-		rcc = RCC_AHB1Periph_GPIOH;
+-	}
+-	else if (GPIOx == GPIOI)
+-	{
+-		rcc = RCC_AHB1Periph_GPIOI;
+-	}
+-
+-	return rcc;
+-}
+-
+-
+-/*
+-*********************************************************************************************************
+-*	函 数 名: bsp_GetPinSource
+-*	功能说明: 根据 GPIO_Pin_X 得到 GPIO_PinSource
+-*	形    参：gpio_pin
+-*	返 回 值: GPIO_PinSource
+-*********************************************************************************************************
+-*/
+-uint16_t bsp_GetPinSource(uint16_t gpio_pin)
+-{
+-	uint16_t ret = 0;
+-
+-	if (gpio_pin == GPIO_Pin_0)
+-	{
+-		ret = GPIO_PinSource0;
+-	}
+-	else if (gpio_pin == GPIO_Pin_1)
+-	{
+-		ret = GPIO_PinSource1;
+-	}
+-	else if (gpio_pin == GPIO_Pin_2)
+-	{
+-		ret = GPIO_PinSource2;
+-	}
+-	else if (gpio_pin == GPIO_Pin_3)
+-	{
+-		ret = GPIO_PinSource3;
+-	}
+-	else if (gpio_pin == GPIO_Pin_4)
+-	{
+-		ret = GPIO_PinSource4;
+-	}
+-	else if (gpio_pin == GPIO_Pin_5)
+-	{
+-		ret = GPIO_PinSource5;
+-	}
+-	else if (gpio_pin == GPIO_Pin_6)
+-	{
+-		ret = GPIO_PinSource6;
+-	}
+-	else if (gpio_pin == GPIO_Pin_7)
+-	{
+-		ret = GPIO_PinSource7;
+-	}
+-	else if (gpio_pin == GPIO_Pin_8)
+-	{
+-		ret = GPIO_PinSource8;
+-	}
+-	else if (gpio_pin == GPIO_Pin_9)
+-	{
+-		ret = GPIO_PinSource9;
+-	}
+-	else if (gpio_pin == GPIO_Pin_10)
+-	{
+-		ret = GPIO_PinSource10;
+-	}
+-	else if (gpio_pin == GPIO_Pin_11)
+-	{
+-		ret = GPIO_PinSource11;
+-	}
+-	else if (gpio_pin == GPIO_Pin_12)
+-	{
+-		ret = GPIO_PinSource12;
+-	}
+-	else if (gpio_pin == GPIO_Pin_13)
+-	{
+-		ret = GPIO_PinSource13;
+-	}
+-	else if (gpio_pin == GPIO_Pin_14)
+-	{
+-		ret = GPIO_PinSource14;
+-	}
+-	else if (gpio_pin == GPIO_Pin_15)
+-	{
+-		ret = GPIO_PinSource15;
+-	}
+-
+-	return ret;
+-}
+-
+-
+-/*
+-*********************************************************************************************************
+-*	函 数 名: bsp_GetRCCofTIM
+-*	功能说明: 根据TIM 得到RCC寄存器
+-*	形    参：无
+-*	返 回 值: TIM外设时钟名
+-*********************************************************************************************************
+-*/
+-uint32_t bsp_GetRCCofTIM(TIM_TypeDef* TIMx)
+-{
+-	uint32_t rcc = 0;
+-
+-	/*
+-		APB1 定时器有 TIM2, TIM3 ,TIM4, TIM5, TIM6, TIM7, TIM12, TIM13, TIM14
+-		APB2 定时器有 TIM1, TIM8 ,TIM9, TIM10, TIM11
+-	*/
+-	if (TIMx == TIM1)
+-	{
+-		rcc = RCC_APB2Periph_TIM1;
+-	}
+-	else if (TIMx == TIM8)
+-	{
+-		rcc = RCC_APB2Periph_TIM8;
+-	}
+-	else if (TIMx == TIM9)
+-	{
+-		rcc = RCC_APB2Periph_TIM9;
+-	}
+-	else if (TIMx == TIM10)
+-	{
+-		rcc = RCC_APB2Periph_TIM10;
+-	}
+-	else if (TIMx == TIM11)
+-	{
+-		rcc = RCC_APB2Periph_TIM11;
+-	}
+-	/* 下面是 APB1时钟 */
+-	else if (TIMx == TIM2)
+-	{
+-		rcc = RCC_APB1Periph_TIM2;
+-	}
+-	else if (TIMx == TIM3)
+-	{
+-		rcc = RCC_APB1Periph_TIM3;
+-	}
+-	else if (TIMx == TIM4)
+-	{
+-		rcc = RCC_APB1Periph_TIM4;
+-	}
+-	else if (TIMx == TIM5)
+-	{
+-		rcc = RCC_APB1Periph_TIM5;
+-	}
+-	else if (TIMx == TIM6)
+-	{
+-		rcc = RCC_APB1Periph_TIM6;
+-	}
+-	else if (TIMx == TIM7)
+-	{
+-		rcc = RCC_APB1Periph_TIM7;
+-	}
+-	else if (TIMx == TIM12)
+-	{
+-		rcc = RCC_APB1Periph_TIM12;
+-	}
+-	else if (TIMx == TIM13)
+-	{
+-		rcc = RCC_APB1Periph_TIM13;
+-	}
+-	else if (TIMx == TIM14)
+-	{
+-		rcc = RCC_APB1Periph_TIM14;
+-	}
+-
+-	return rcc;
+-}
+-
+-/*
+-*********************************************************************************************************
+-*	函 数 名: bsp_GetAFofTIM
+-*	功能说明: 根据TIM 得到AF寄存器配置
+-*	形    参: 无
+-*	返 回 值: AF寄存器配置
+-*********************************************************************************************************
+-*/
+-uint8_t bsp_GetAFofTIM(TIM_TypeDef* TIMx)
+-{
+-	uint8_t ret = 0;
+-
+-	/*
+-		APB1 定时器有 TIM2, TIM3 ,TIM4, TIM5, TIM6, TIM7, TIM12, TIM13, TIM14
+-		APB2 定时器有 TIM1, TIM8 ,TIM9, TIM10, TIM11
+-	*/
+-	if (TIMx == TIM1)
+-	{
+-		ret = GPIO_AF_TIM1;
+-	}
+-	else if (TIMx == TIM8)
+-	{
+-		ret = GPIO_AF_TIM8;
+-	}
+-	else if (TIMx == TIM9)
+-	{
+-		ret = GPIO_AF_TIM9;
+-	}
+-	else if (TIMx == TIM10)
+-	{
+-		ret = GPIO_AF_TIM10;
+-	}
+-	else if (TIMx == TIM11)
+-	{
+-		ret = GPIO_AF_TIM11;
+-	}
+-	/* 下面是 APB1时钟 */
+-	else if (TIMx == TIM2)
+-	{
+-		ret = GPIO_AF_TIM2;
+-	}
+-	else if (TIMx == TIM3)
+-	{
+-		ret = GPIO_AF_TIM3;
+-	}
+-	else if (TIMx == TIM4)
+-	{
+-		ret = GPIO_AF_TIM4;
+-	}
+-	else if (TIMx == TIM5)
+-	{
+-		ret = GPIO_AF_TIM5;
+-	}
+-	/* 没有 TIM6 TIM7 */
+-	else if (TIMx == TIM8)
+-	{
+-		ret = GPIO_AF_TIM8;
+-	}
+-	else if (TIMx == TIM9)
+-	{
+-		ret = GPIO_AF_TIM9;
+-	}
+-	else if (TIMx == TIM12)
+-	{
+-		ret = GPIO_AF_TIM12;
+-	}
+-	else if (TIMx == TIM13)
+-	{
+-		ret = GPIO_AF_TIM13;
+-	}
+-	else if (TIMx == TIM14)
+-	{
+-		ret = GPIO_AF_TIM14;
+-	}
+-
+-	return ret;
+-}
+-
+-/*
+-*********************************************************************************************************
+ *	函 数 名: bsp_ConfigGpioOut
+ *	功能说明: 配置GPIO为推挽输出。主要用于PWM输出，占空比为0和100的情况。
+ *	形    参: GPIOx

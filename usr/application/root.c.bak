@@ -1,0 +1,182 @@
+#include  <ucos_ii.h>
+#include <stdio.h>
+#include <stdint.h>
+#include "includes.h"
+#include <bsp.h>
+#include <bsp_tim_pwm.h>
+#include "can_dispatcher.h"
+#include "bsp_io.h"
+#include "bsp_led.h"
+#include "bsp_wifi.h"
+
+#include "bsp_pwm.h"
+#include "bsp_wifi.h"
+#include "log_print.h"
+#include "agv.h"
+#include "agvcp.h"
+#include "motors.h"
+#include "Navigation.h"
+#include "reverseMotionControl.h"
+
+static void led_tmr_callback(void *tmr, void*data);
+static int log_out(int hd, const uint8_t*buf, uint32_t l);
+
+int wifi_device;
+
+static void print_devinfo(void)
+{
+    APP_TRACE("+-----------------------------------------------------\r\n");
+    APP_TRACE("+               Sorting AGV(ID: %08X)            +\r\n", AGV_ID);
+    APP_TRACE("+               SW-version:"SW_VERSION"                       +\r\n");
+    APP_TRACE("+----------------------------------------------------+\r\n");
+}
+
+#if 0
+#define DUMPER_W        80
+static void down_tohome()
+{
+    APP_TRACE("dumper down to home.\r\n");
+    dumper_down(DUMPER_W);
+
+    while(!is_dumper_homing())
+        ;
+
+    dumper_stop();
+}
+
+static void up_to_angle(int angle)
+{
+    APP_TRACE("dumper up to angle.\r\n");
+
+    dumper_up(DUMPER_W);
+    while(dumper_angle()<angle)
+        ;
+    //OSTimeDly(MS_TO_TICKS(2000));
+
+    dumper_stop();
+}
+
+static void test(void)
+{
+    motors_power_onoff(1);
+    MOTORS_ATTACH();
+
+    OSTimeDly(MS_TO_TICKS(2000));
+
+    //dumper_up(50);
+#if 1
+    if(is_dumper_homing())
+        up_to_angle(60);
+    else
+        down_tohome();
+#endif
+    OSTaskSuspend(OS_PRIO_SELF);
+}
+#endif
+
+void root_task(void *p_arg)
+{
+    (void)p_arg;
+    OS_TMR    *led_tmr;
+    uint8_t   err;
+    int       ret;
+
+    bsp_Init();
+    CPU_Init();
+    BSP_Tick_Init();
+    bsp_InitLed();
+
+  /* 检测CPU能力，统计模块初始化。该函数将检测最低CPU占有率 */
+#if (OS_TASK_STAT_EN > 0)
+    OSStatInit();
+#endif
+    /*USART1 used to output debug info by printf*/
+    bsp_InitUart(USART1, 115200, USART_StopBits_1, USART_Parity_No);
+    motors_init();
+    print_devinfo();
+
+    /*for test use*/
+//    test();
+
+    APP_TRACE("Wait wifi module startup...\r\n");
+    //Wait wifi module startup
+    OSTimeDlyHMSM(0,0,8,0);
+
+    APP_TRACE("Initialize wifi module...\r\n");
+    /*initialize the uart wifi module*/
+    mico_init_driver();
+    wifi_device = mico_create_device(USART2, WIFI_MODE_STATOIN);
+
+    ret = mico_init_station(wifi_device, WIFI_AP_NAME, WIFI_PASSWORD,
+                      WIFI_LOCAL_IP, WIFI_NETMASK, WIFI_GATEWAY);
+    if(ret != 0)
+        APP_TRACE("Wifi initialize station failed. \r\n");
+
+    can_dispatcher_init(CAN2, 250);
+
+    /*导航摄像头初始化*/
+    NavigationInit();
+
+    agv_init(AGV_ID);
+
+    can_dispatcher_run();
+
+    /*
+     * 先关闭，在打开。
+     * 避免控制器断电而摄像头没断电的情况下，不上报位置信息。
+     * */
+    NavigationOnOff(0);
+    OSTimeDly(MS_TO_TICKS(500));
+    NavigationOnOff(1);
+    //等待摄像头上报导航信息，初始化车头方向
+    InitAgvHeadDir();
+
+    //延时500ms,防止电机锁定太快，没有推到位的情况
+    OSTimeDly(MS_TO_TICKS(500));
+
+    /*动力上电*/
+    motors_power_onoff(1);
+    MOTORS_ATTACH();
+
+    //动力上电有延时
+    OSTimeDly(MS_TO_TICKS(1500));
+
+    agv_run();
+    /*
+     * timer to drive the led indicator flickers
+     * period = 500ms
+     * */
+    led_tmr = OSTmrCreate(5, 5, OS_TMR_OPT_PERIODIC,
+                          led_tmr_callback, NULL, "led-tmr", &err);
+    OSTmrStart(led_tmr, &err);
+
+    int       udp_scok;
+    conn_state_t st;
+
+    /*
+     * 等待udp连接OK, 设置使用UDP输出Log
+     */
+    do{
+        OSTimeDly(MS_TO_TICKS(100));
+        st = agvcp_get_connenction_state();
+    }while( (st==CONNSTATE_OFFLINE) || (st==CONNSTATE_ERROR) );
+
+    udp_scok = agvcp_get_socket();
+    if(udp_scok != 0)
+        log_init(log_out, udp_scok);
+
+    APP_TRACE("Initialize over.\r\n"
+              "root task suspending...\r\n");
+
+    OSTaskSuspend(OS_PRIO_SELF);
+}
+
+static void led_tmr_callback(void *tmr, void*data)
+{
+    bsp_LedToggle();
+}
+
+static int log_out(int hd, const uint8_t*buf, uint32_t l)
+{
+    return mico_writeto(hd, (uint8_t*)buf, l, TERMINAL_IP, TERMINAL_PORT);
+}

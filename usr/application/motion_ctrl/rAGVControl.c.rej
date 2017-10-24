@@ -1,0 +1,20 @@
+diff a/usr/application/motion_ctrl/rAGVControl.c b/usr/application/motion_ctrl/rAGVControl.c	(rejected hunks)
+@@ -500,11 +500,15 @@
+ 					angleProcess = 0.0f;
+ 			   }
+ 
++        uint16_t ret;
+ 				if ( wCurrent <  wTarget )
+-					FApproach(&wCurrent, wTarget, wCurDec); // ֱӲ���·����������ٶ?
++					ret = FApproach(&wCurrent, wTarget, wCurDec); // ֱӲ���·����������ٶ?
+ 				else
+-					FApproach(&wCurrent, wTarget, wCurInc); // ֱ�Ӳ���·����������ٶ�
+-
++					ret = FApproach(&wCurrent, wTarget, wCurInc); // ֱ�Ӳ���·����������ٶ�
++#if 0
++        if(ret != 0)
++          APP_TRACE("wCurrent = %f\r\n", wCurrent);
++#endif
+ 				if(absVar(wCurrent) < 0.01f)
+ 				{
+             Motionstyle = ACTION_MODE_STOP ;

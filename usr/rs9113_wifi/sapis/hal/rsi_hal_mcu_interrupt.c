@@ -1,0 +1,172 @@
+/**
+ * @file       rsi_hal_mcu_interrupt.c
+ * @version    0.1
+ * @date       18 sept 2015
+ *
+ * Copyright(C) Redpine Signals 2015
+ * All rights reserved by Redpine Signals.
+ *
+ * @section License
+ * This program should be used on your own responsibility.
+ * Redpine Signals assumes no responsibility for any losses
+ * incurred by customers or third parties arising from the use of this file.
+ *
+ * @brief HAL INTERRUPT: Functions related to HAL Interrupts
+ * 
+ * @section Description
+ * This file contains the list of functions for configuring the microcontroller interrupts. 
+ * Following are list of API's which need to be defined in this file.
+ *
+ */
+
+
+/**
+ * Includes
+ */
+#include "rsi_driver.h"
+#include "bsp.h"
+
+#define WIFI_INTR_PORT      GPIOC
+#define WIFI_INTR_PIN       GPIO_Pin_7
+
+#define WIFI_EXTI_PORTSRC   EXTI_PortSourceGPIOC
+#define WIFI_EXTI_PINSRC    GPIO_PinSource7
+#define WIFI_EXTI_LINE      EXTI_Line7
+
+static EXTI_InitTypeDef    exti_conf =
+{
+    WIFI_EXTI_LINE,
+    EXTI_Mode_Interrupt,
+    EXTI_Trigger_Rising,
+    DISABLE,
+};
+
+static void(*rsi_exti_cb)(void) = NULL;
+
+void EXTI9_5_IRQHandler(void)
+{
+    EXTI_ClearITPendingBit(WIFI_EXTI_LINE);
+
+    if(rsi_exti_cb != NULL)
+      rsi_exti_cb();
+}
+
+/*===================================================*/
+/**
+ * @fn           void rsi_hal_intr_config(void (* rsi_interrupt_handler)())
+ * @brief        Starts and enables the SPI interrupt
+ * @param[in]    rsi_interrupt_handler() ,call back function to handle interrupt
+ * @param[out]   none
+ * @return       none
+ * @description  This HAL API should contain the code to initialize the register/pins
+ *               related to interrupts and enable the interrupts.
+ */
+void rsi_hal_intr_config(void (* rsi_interrupt_handler)())
+{
+    NVIC_InitTypeDef    nvic;
+	  GPIO_InitTypeDef GPIO_InitStructure;
+
+    nvic.NVIC_IRQChannel = EXTI9_5_IRQn;
+    nvic.NVIC_IRQChannelPreemptionPriority = 1;
+    nvic.NVIC_IRQChannelSubPriority= 1;
+    nvic.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&nvic);
+
+  //! Configure interrupt pin/register in input mode 
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
+    GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
+    GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
+		GPIO_InitStructure.GPIO_Pin = WIFI_INTR_PIN;
+	  GPIO_Init(WIFI_INTR_PORT, &GPIO_InitStructure);
+
+    SYSCFG_EXTILineConfig(WIFI_EXTI_PORTSRC, WIFI_EXTI_PINSRC);
+
+    //and register the interrupt handler
+    rsi_exti_cb = rsi_interrupt_handler;
+
+#if 0
+    exti_conf.EXTI_LineCmd = ENABLE;
+    EXTI_Init(&exti_conf);
+#endif
+
+    return;
+}
+
+
+/*===================================================*/
+/** 
+ * @fn           void rsi_hal_intr_mask(void)
+ * @brief        Disables the SPI Interrupt
+ * @param[in]    none
+ * @param[out]   none
+ * @return       none
+ * @description  This HAL API should contain the code to mask/disable interrupts.
+ */
+void rsi_hal_intr_mask(void)
+{
+
+  //! Mask/Disable the interrupt 
+    exti_conf.EXTI_LineCmd = DISABLE;
+    EXTI_Init(&exti_conf);
+
+  return;
+}
+
+
+/*===================================================*/
+/**
+ * @fn           void rsi_hal_intr_unmask(void)
+ * @brief        Enables the SPI interrupt
+ * @param[in]    none  
+ * @param[out]   none
+ * @return       none
+ * @description  This HAL API should contain the code to enable interrupts.
+ */
+void rsi_hal_intr_unmask(void)
+{
+  //! Unmask/Enable the interrupt
+    exti_conf.EXTI_LineCmd = ENABLE;
+    EXTI_Init(&exti_conf);
+  return;
+
+}
+
+
+
+/*===================================================*/
+/**
+ * @fn           void rsi_hal_intr_clear(void)
+ * @brief        Clears the pending interrupt
+ * @param[in]    none
+ * @param[out]   none
+ * @return       none
+ * @description  This HAL API should contain the code to clear the handled interrupts.
+ */
+void rsi_hal_intr_clear(void)
+{
+   //! Clear the interrupt
+    EXTI_ClearITPendingBit(WIFI_EXTI_LINE);
+   return;
+}
+
+
+/*===================================================*/
+/**
+ * @fn          void rsi_hal_intr_pin_status(void)
+ * @brief       Checks the SPI interrupt at pin level
+ * @param[in]   none  
+ * @param[out]  uint8_t, interrupt status 
+ * @return      none
+ * @description This API is used to check interrupt pin status(pin level whether it is high/low).
+ */	
+uint8_t rsi_hal_intr_pin_status(void)
+{
+
+  volatile uint8_t status = 0;
+
+  //! Return interrupt pin  status(high(1) /low (0))
+  status = GPIO_ReadInputDataBit(WIFI_INTR_PORT, WIFI_INTR_PIN);
+  return status;
+}
+
