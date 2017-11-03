@@ -1,0 +1,9 @@
+..\output\ff.o: ..\..\usr\common\fatfs\src\ff.c
+..\output\ff.o: ..\..\usr\common\fatfs\src\ff.h
+..\output\ff.o: ..\..\ucosii\uCOS-II\Source\ucos_ii.h
+..\output\ff.o: ..\..\usr\os_cfg.h
+..\output\ff.o: ..\..\ucosii\uCOS-II\Ports\ARM-Cortex-M4\Generic\RealView\os_cpu.h
+..\output\ff.o: ..\..\usr\common\fatfs\src\integer.h
+..\output\ff.o: ..\..\usr\common\fatfs\src\ffconf.h
+..\output\ff.o: ..\..\usr\common\fatfs\src\diskio.h
+..\output\ff.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdarg.h

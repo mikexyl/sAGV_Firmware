@@ -22,13 +22,15 @@ static OS_STK enc_task_stack[ENC_TASK_STACKSIZE];
 #define ENC_TASK_PRIOR 30
 
 #define SAGV_CANID 0x07
-#define ENCODER_CANID 0x110
 #define PC_CANID 0x09
+
+#define ENCODER_CANID 0x110
+#define DLYTEST_CANID 0x120
 
 #define AGV_CMD_TYPE_VEL 0x220
 #define AGV_CMD_TYPE_ENC 0x230
 
-static int  can_msg_process(int usr, CanRxMsg* msg);
+static int  algo_can_msg_process(int usr, CanRxMsg* msg);
 static void canSendTask(void *param);
 static int can_user;
 static void sAGV_algo_run(void* param);
@@ -55,6 +57,9 @@ encoder_data_t encoder_data;
 
 uint8_t err;
 
+uint16_t t0;
+uint16_t t1;
+
 int canSendTest(void)
 {
 	encoder_l = open_encoder(1);
@@ -67,7 +72,7 @@ int canSendTest(void)
 	
 	uint8_t err;
 
-	can_user=can_dispatcher_register_user("pc",can_msg_process);
+	can_user=can_dispatcher_register_user("pc",algo_can_msg_process);
 	
 	err = OSTaskCreateExt(canSendTask,	/* ???????? */
                       (void *)0,		/* ???????? */
@@ -114,11 +119,9 @@ static void send_encoder_unpolling(void)
 								OS_TASK_OPT_STK_CHK | OS_TASK_OPT_STK_CLR); /* ????? */
 }
 
-static int can_msg_process(int usr,CanRxMsg* msg)
+static int algo_can_msg_process(int usr,CanRxMsg* msg)
 {
 	uint32_t tmp[2];
-
-
 
 	if( (msg->IDE != CAN_Id_Standard) || (msg->RTR != CAN_RTR_Data) )
 			return -PERR_ENOTSUP;
@@ -133,6 +136,17 @@ static int can_msg_process(int usr,CanRxMsg* msg)
 	case AGV_CMD_TYPE_ENC|PC_CANID:
 		send_encoder_unpolling();
 		break;
+	case DLYTEST_CANID|PC_CANID:
+		t1=OSTimeGet();
+		CanTxMsg testMsg;
+	
+		testMsg.StdId=SAGV_CANID|DLYTEST_CANID;
+		testMsg.IDE=CAN_Id_Standard;
+		testMsg.RTR=CAN_RTR_Data;
+		testMsg.DLC=8;
+		
+		can_dispatcher_send_msg(0,&testMsg);
+		break;
 	default:
 		break;
 	}
@@ -142,11 +156,22 @@ static int can_msg_process(int usr,CanRxMsg* msg)
 
 int _encCntL=0;
 int _encCntR=0;
+
 static void canSendTask(void *param)
 {
+	OSTimeDly(MS_TO_TICKS(5000));
+	CAN_TTComModeCmd(CAN2,ENABLE);
+	CanTxMsg testMsg;
+	
+	testMsg.StdId=SAGV_CANID|DLYTEST_CANID;
+	testMsg.IDE=CAN_Id_Standard;
+	testMsg.RTR=CAN_RTR_Data;
+	testMsg.DLC=8;
+	
+	can_dispatcher_send_msg(0,&testMsg);
+	t0=OSTimeGet();
 	while(1)
 	{
-	CanTxMsg testMsg;
 
 	encoder_data.encoder_l=get_count_and_clear(encoder_l);
 	encoder_data.encoder_r=get_count_and_clear(encoder_r);
@@ -162,10 +187,12 @@ static void canSendTask(void *param)
 	testMsg.DLC=8;
 
 
-	memcpy(testMsg.Data,&encoder_data,16);
+	//memcpy(testMsg.Data,&encoder_data,16);
 	
-	can_dispatcher_send_msg(0,&testMsg);
+	//can_dispatcher_send_msg(0,&testMsg);
+
   OSTimeDly(MS_TO_TICKS(10));
+
 	}
 }
 

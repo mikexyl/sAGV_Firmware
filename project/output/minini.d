@@ -1,0 +1,17 @@
+..\output\minini.o: ..\..\usr\common\minIni\minIni.c
+..\output\minini.o: ..\..\usr\app_cfg.h
+..\output\minini.o: ..\..\usr\include\common/log_print.h
+..\output\minini.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
+..\output\minini.o: ..\..\usr\include\common/tools.h
+..\output\minini.o: ..\..\usr\common\minIni\minIni.h
+..\output\minini.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\string.h
+..\output\minini.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdio.h
+..\output\minini.o: ..\..\usr\common\minIni\minGlue-FatFs.h
+..\output\minini.o: ..\..\usr\common\fatfs\src\ff.h
+..\output\minini.o: ..\..\ucosii\uCOS-II\Source\ucos_ii.h
+..\output\minini.o: ..\..\usr\os_cfg.h
+..\output\minini.o: ..\..\ucosii\uCOS-II\Ports\ARM-Cortex-M4\Generic\RealView\os_cpu.h
+..\output\minini.o: ..\..\usr\common\fatfs\src\integer.h
+..\output\minini.o: ..\..\usr\common\fatfs\src\ffconf.h
+..\output\minini.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\ctype.h
+..\output\minini.o: C:\Keil_v5\ARM\ARMCC\Bin\..\include\stdlib.h
